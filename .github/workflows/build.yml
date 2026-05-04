@@ -46,6 +46,13 @@ jobs:
             --console `
             app.py
 
+      - name: 删除旧 Release（如存在）
+        continue-on-error: true
+        run: |
+          gh release delete latest --yes --cleanup-tag 2>$null
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: 发布到 GitHub Release
         uses: ncipollo/release-action@v1
         with:
@@ -54,5 +61,3 @@ jobs:
           name: "SSS五绝计算器 - Windows"
           body: "双击 SSS五绝计算器.exe 即可使用，无需安装任何环境。"
           artifacts: "dist/SSS五绝计算器.exe"
-          allowUpdates: true
-          makeLatest: true
