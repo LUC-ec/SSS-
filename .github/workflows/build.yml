@@ -78,24 +78,37 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/download-artifact@v4
-      - name: 清理旧 Release
-        shell: bash
-        run: |
-          set +e
-          gh release delete latest --yes --cleanup-tag 2>/dev/null
-          exit 0
-
-      - name: 调试 - 列出文件
-        run: |
-          ls -la SSS-Windows/ SSS-macOS/ 2>/dev/null || echo "目录不存在！"
-          ls -la
 
       - name: 创建 Release
         run: |
-          set -x
-          gh release create latest \
-            "SSS-Windows/SSS.exe" \
-            "SSS-macOS/SSS" \
-            --title "SSS五绝计算器" \
-            --notes "Windows 用户下载 SSS.exe 双击运行。macOS 用户下载 SSS 双击运行。无需安装 Python。" \
-            --latest
+          API="https://api.github.com/repos/${{ github.repository }}"
+          AUTH="Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}"
+          # 删除已有 latest release
+          EXISTING=$(curl -s -H "$AUTH" "$API/releases/tags/latest" 2>/dev/null)
+          EXISTING_ID=$(echo "$EXISTING" | python3 -c "import json,sys; print(json.load(sys.stdin).get('id',''))" 2>/dev/null || echo "")
+          if [ -n "$EXISTING_ID" ]; then
+            echo "删除旧 release id=$EXISTING_ID"
+            curl -s -X DELETE -H "$AUTH" "$API/releases/$EXISTING_ID"
+            sleep 2
+          fi
+          # 删除旧 tag
+          curl -s -X DELETE -H "$AUTH" "$API/git/refs/tags/latest" 2>/dev/null || true
+          # 创建新 release
+          curl -s -X POST -H "$AUTH" -H "Content-Type: application/json" \
+            "$API/releases" -d '{
+              "tag_name": "latest",
+              "name": "SSS五绝计算器",
+              "body": "Windows 用户下载 SSS.exe 双击运行。macOS 用户下载 SSS 双击运行。无需安装 Python。",
+              "make_latest": "true"
+            }' > release.json
+          cat release.json
+          UPLOAD_URL=$(python3 -c "import json,sys; print(json.load(sys.stdin)['upload_url'].split('{')[0])" < release.json)
+          # 上传 Windows
+          curl -s -X POST -H "$AUTH" -H "Content-Type: application/octet-stream" \
+            "$UPLOAD_URL?name=SSS.exe" --data-binary @SSS-Windows/SSS.exe
+          echo ""
+          # 上传 macOS
+          curl -s -X POST -H "$AUTH" -H "Content-Type: application/octet-stream" \
+            "$UPLOAD_URL?name=SSS-macOS" --data-binary @SSS-macOS/SSS
+          echo ""
+          echo "Release 发布完成"
