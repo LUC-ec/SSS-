@@ -43,8 +43,12 @@ jobs:
             --console `
             app.py
 
-      - name: 上传 EXE
-        uses: actions/upload-artifact@v4
+      - name: 发布到 GitHub Release
+        uses: ncipollo/release-action@v1
         with:
-          name: SSS五绝计算器-Windows
-          path: dist/SSS五绝计算器.exe
+          tag: latest
+          name: "SSS五绝计算器 - Windows"
+          body: "双击 SSS五绝计算器.exe 即可使用，无需安装任何环境。"
+          artifacts: "dist/SSS五绝计算器.exe"
+          allowUpdates: true
+          makeLatest: true
