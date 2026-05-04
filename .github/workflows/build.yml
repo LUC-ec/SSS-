@@ -47,10 +47,17 @@ jobs:
             app.py
 
       - name: 发布到 GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          tag_name: latest
-          name: "SSS五绝计算器 - Windows"
-          body: "双击 SSS五绝计算器.exe 即可使用，无需安装任何环境。"
-          files: "dist/SSS五绝计算器.exe"
+        run: |
+          # 删除旧 release 和 tag
+          gh release delete latest --yes --cleanup-tag 2>$null
+          # 等 GitHub 清理完
+          Start-Sleep -Seconds 5
+          # 重命名 exe 为纯英文避免编码问题
+          Move-Item -Path "dist/SSS五绝计算器.exe" -Destination "dist/SSS.exe" -Force
+          # 创建新 release
+          gh release create latest "dist/SSS.exe" `
+            --title "SSS五绝计算器 - Windows" `
+            --notes "双击 SSS.exe 即可使用，无需安装任何环境。" `
+            --latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
