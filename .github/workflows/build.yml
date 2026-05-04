@@ -74,14 +74,20 @@ jobs:
   release:
     needs: [build-windows, build-macos]
     runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/download-artifact@v4
-      - run: |
-          gh release delete latest --yes --cleanup-tag 2>/dev/null || true
-          sleep 5
+      - name: 清理旧 Release
+        shell: bash
+        run: |
+          set +e
+          gh release delete latest --yes --cleanup-tag 2>/dev/null
+          exit 0
+
+      - name: 创建 Release
+        run: |
           gh release create latest SSS-Windows/SSS.exe SSS-macOS/SSS \
             --title "SSS五绝计算器" \
             --notes "Windows 用户下载 SSS.exe 双击运行。macOS 用户下载 SSS 双击运行。无需安装 Python。" \
             --latest
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
