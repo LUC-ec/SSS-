@@ -1,16 +1,32 @@
-name: 打包 Windows 版本
+name: 打包 Windows / macOS 版本
 
 on:
   push:
     branches: [main, master]
-  workflow_dispatch:  # 允许手动触发
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
   build:
-    runs-on: windows-latest
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            ext: .exe
+            sep: ";"
+            line: "`"
+            name: SSS-Windows
+            label: SSS.exe
+          - os: macos-latest
+            ext: ""
+            sep: ":"
+            line: "\"
+            name: SSS-macOS
+            label: SSS.app
+
+    runs-on: ${{ matrix.os }}
 
     steps:
       - name: 检出代码
@@ -25,39 +41,57 @@ jobs:
         run: |
           pip install -r requirements.txt
 
-      - name: 打包 EXE
+      - name: 打包
         run: |
-          pyinstaller --onefile --name SSS五绝计算器 `
-            --add-data "templates;templates" `
-            --add-data "static;static" `
-            --add-data "fund_tracker.db;." `
-            --hidden-import flask_sqlalchemy `
-            --hidden-import sqlalchemy.sql.default_comparator `
-            --hidden-import sqlalchemy.ext.declarative `
-            --hidden-import chinese_calendar `
-            --hidden-import chinese_calendar.constants `
-            --hidden-import calculator `
-            --hidden-import models `
-            --hidden-import trading_calendar `
-            --exclude-module tkinter `
-            --exclude-module matplotlib `
-            --exclude-module numpy `
-            --exclude-module pandas `
-            --console `
+          pyinstaller --onefile --name SSS ${{ matrix.line }}
+            --add-data "templates${{ matrix.sep }}templates" ${{ matrix.line }}
+            --add-data "static${{ matrix.sep }}static" ${{ matrix.line }}
+            --add-data "fund_tracker.db${{ matrix.sep }}." ${{ matrix.line }}
+            --hidden-import flask_sqlalchemy ${{ matrix.line }}
+            --hidden-import sqlalchemy.sql.default_comparator ${{ matrix.line }}
+            --hidden-import sqlalchemy.ext.declarative ${{ matrix.line }}
+            --hidden-import chinese_calendar ${{ matrix.line }}
+            --hidden-import chinese_calendar.constants ${{ matrix.line }}
+            --hidden-import calculator ${{ matrix.line }}
+            --hidden-import models ${{ matrix.line }}
+            --hidden-import trading_calendar ${{ matrix.line }}
+            --exclude-module tkinter ${{ matrix.line }}
+            --exclude-module matplotlib ${{ matrix.line }}
+            --exclude-module numpy ${{ matrix.line }}
+            --exclude-module pandas ${{ matrix.line }}
+            --console ${{ matrix.line }}
             app.py
 
-      - name: 发布到 GitHub Release
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: dist/SSS${{ matrix.ext }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: 下载产物
+        uses: actions/download-artifact@v4
+        with:
+          pattern: SSS-*
+          merge-multiple: false
+
+      - name: 清理旧 Release
         run: |
-          # 删除旧 release 和 tag
-          gh release delete latest --yes --cleanup-tag 2>$null
-          # 等 GitHub 清理完
-          Start-Sleep -Seconds 5
-          # 重命名 exe 为纯英文避免编码问题
-          Move-Item -Path "dist/SSS五绝计算器.exe" -Destination "dist/SSS.exe" -Force
-          # 创建新 release
-          gh release create latest "dist/SSS.exe" `
-            --title "SSS五绝计算器 - Windows" `
-            --notes "双击 SSS.exe 即可使用，无需安装任何环境。" `
+          gh release delete latest --yes --cleanup-tag 2>/dev/null || true
+          sleep 5
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 发布 Release
+        run: |
+          gh release create latest \
+            SSS-Windows/SSS.exe \
+            SSS-macOS/SSS \
+            --title "SSS五绝计算器" \
+            --notes "Windows 用户下载 SSS.exe 双击运行；macOS 用户下载 SSS 双击运行。无需安装任何环境。" \
             --latest
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
