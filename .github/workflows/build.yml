@@ -1,0 +1,33 @@
+name: 打包 Windows 版本
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:  # 允许手动触发
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 安装依赖
+        run: |
+          pip install -r requirements.txt
+
+      - name: 打包 EXE
+        run: |
+          pyinstaller "SSS五绝计算器.spec"
+
+      - name: 上传 EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: SSS五绝计算器-Windows
+          path: dist/SSS五绝计算器.exe
