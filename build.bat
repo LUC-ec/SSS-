@@ -20,7 +20,7 @@ pip install pyinstaller
 
 echo.
 echo [2/3] 开始打包（约需 3-5 分钟）...
-pyinstaller "SSS五绝计算器.spec"
+pyinstaller --onefile --name SSS五绝计算器 --add-data "templates;templates" --add-data "static;static" --add-data "fund_tracker.db;." --hidden-import flask_sqlalchemy --hidden-import sqlalchemy.sql.default_comparator --hidden-import sqlalchemy.ext.declarative --hidden-import chinese_calendar --hidden-import chinese_calendar.constants --hidden-import calculator --hidden-import models --hidden-import trading_calendar --exclude-module tkinter --exclude-module matplotlib --exclude-module numpy --exclude-module pandas --console app.py
 
 echo.
 echo [3/3] 打包完成！
