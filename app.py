@@ -1,9 +1,22 @@
+# -*- coding: utf-8 -*-
+import os, sys
+
+# 修复 PyInstaller 打包后终端编码问题
+os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+try:
+    if hasattr(sys.stdout, "reconfigure") and sys.stdout.encoding != "utf-8":
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure") and sys.stderr.encoding != "utf-8":
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 from flask import Flask, jsonify, request, render_template
 from models import db, Sector, SSSFund, SSSSectorConfig, PersonalFund, PersonalSetting, DailyInvestment, InvestmentRecord
 from calculator import compute_all, simulate_follow
 from trading_calendar import process_pending_investments, is_trading_day, get_pending_dates
 from sqlalchemy import func
-import os, sys, webbrowser, threading, shutil
+import webbrowser, threading, shutil
 
 app = Flask(__name__)
 
