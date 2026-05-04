@@ -66,7 +66,6 @@ def api_sector_create():
     db.session.flush()
     db.session.add(SSSSectorConfig(sector_id=s.id, position_level=position_level,
                                    full_position=data.get("full_position", 0)))
-    db.session.add(DailyInvestment(sector_id=s.id, daily_amount=0, is_active=1))
     db.session.commit()
     return jsonify({"ok": True, "id": s.id})
 
@@ -294,7 +293,7 @@ def seed():
             conn.exec_driver_sql("ALTER TABLE daily_investments ADD COLUMN cycle_day INTEGER")
 
     if db.session.get(PersonalSetting, 1) is None:
-        db.session.add(PersonalSetting(id=1, total_budget=50000))
+        db.session.add(PersonalSetting(id=1, total_budget=0))
         db.session.commit()
     if Sector.query.count() > 0:
         return
