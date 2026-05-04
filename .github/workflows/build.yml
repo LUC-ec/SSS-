@@ -9,89 +9,79 @@ permissions:
   contents: write
 
 jobs:
-  build:
-    strategy:
-      matrix:
-        include:
-          - os: windows-latest
-            ext: .exe
-            sep: ";"
-            line: "`"
-            name: SSS-Windows
-            label: SSS.exe
-          - os: macos-latest
-            ext: ""
-            sep: ":"
-            line: "\"
-            name: SSS-macOS
-            label: SSS.app
-
-    runs-on: ${{ matrix.os }}
-
+  build-windows:
+    runs-on: windows-latest
     steps:
-      - name: 检出代码
-        uses: actions/checkout@v4
-
-      - name: 安装 Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install -r requirements.txt
+      - run: >
+          pyinstaller --onefile --name SSS
+          --add-data "templates;templates"
+          --add-data "static;static"
+          --add-data "fund_tracker.db;."
+          --hidden-import flask_sqlalchemy
+          --hidden-import sqlalchemy.sql.default_comparator
+          --hidden-import sqlalchemy.ext.declarative
+          --hidden-import chinese_calendar
+          --hidden-import chinese_calendar.constants
+          --hidden-import calculator
+          --hidden-import models
+          --hidden-import trading_calendar
+          --exclude-module tkinter
+          --exclude-module matplotlib
+          --exclude-module numpy
+          --exclude-module pandas
+          --console
+          app.py
+      - uses: actions/upload-artifact@v4
         with:
-          python-version: "3.11"
+          name: SSS-Windows
+          path: dist/SSS.exe
 
-      - name: 安装依赖
-        run: |
-          pip install -r requirements.txt
-
-      - name: 打包
-        run: |
-          pyinstaller --onefile --name SSS ${{ matrix.line }}
-            --add-data "templates${{ matrix.sep }}templates" ${{ matrix.line }}
-            --add-data "static${{ matrix.sep }}static" ${{ matrix.line }}
-            --add-data "fund_tracker.db${{ matrix.sep }}." ${{ matrix.line }}
-            --hidden-import flask_sqlalchemy ${{ matrix.line }}
-            --hidden-import sqlalchemy.sql.default_comparator ${{ matrix.line }}
-            --hidden-import sqlalchemy.ext.declarative ${{ matrix.line }}
-            --hidden-import chinese_calendar ${{ matrix.line }}
-            --hidden-import chinese_calendar.constants ${{ matrix.line }}
-            --hidden-import calculator ${{ matrix.line }}
-            --hidden-import models ${{ matrix.line }}
-            --hidden-import trading_calendar ${{ matrix.line }}
-            --exclude-module tkinter ${{ matrix.line }}
-            --exclude-module matplotlib ${{ matrix.line }}
-            --exclude-module numpy ${{ matrix.line }}
-            --exclude-module pandas ${{ matrix.line }}
-            --console ${{ matrix.line }}
-            app.py
-
-      - name: 上传产物
-        uses: actions/upload-artifact@v4
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install -r requirements.txt
+      - run: >
+          pyinstaller --onefile --name SSS
+          --add-data "templates:templates"
+          --add-data "static:static"
+          --add-data "fund_tracker.db:."
+          --hidden-import flask_sqlalchemy
+          --hidden-import sqlalchemy.sql.default_comparator
+          --hidden-import sqlalchemy.ext.declarative
+          --hidden-import chinese_calendar
+          --hidden-import chinese_calendar.constants
+          --hidden-import calculator
+          --hidden-import models
+          --hidden-import trading_calendar
+          --exclude-module tkinter
+          --exclude-module matplotlib
+          --exclude-module numpy
+          --exclude-module pandas
+          --console
+          app.py
+      - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.name }}
-          path: dist/SSS${{ matrix.ext }}
+          name: SSS-macOS
+          path: dist/SSS
 
   release:
-    needs: build
+    needs: [build-windows, build-macos]
     runs-on: ubuntu-latest
     steps:
-      - name: 下载产物
-        uses: actions/download-artifact@v4
-        with:
-          pattern: SSS-*
-          merge-multiple: false
-
-      - name: 清理旧 Release
-        run: |
+      - uses: actions/download-artifact@v4
+      - run: |
           gh release delete latest --yes --cleanup-tag 2>/dev/null || true
           sleep 5
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: 发布 Release
-        run: |
-          gh release create latest \
-            SSS-Windows/SSS.exe \
-            SSS-macOS/SSS \
+          gh release create latest SSS-Windows/SSS.exe SSS-macOS/SSS \
             --title "SSS五绝计算器" \
-            --notes "Windows 用户下载 SSS.exe 双击运行；macOS 用户下载 SSS 双击运行。无需安装任何环境。" \
+            --notes "Windows 用户下载 SSS.exe 双击运行。macOS 用户下载 SSS 双击运行。无需安装 Python。" \
             --latest
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
