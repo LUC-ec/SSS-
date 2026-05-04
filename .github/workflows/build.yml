@@ -85,9 +85,17 @@ jobs:
           gh release delete latest --yes --cleanup-tag 2>/dev/null
           exit 0
 
+      - name: 调试 - 列出文件
+        run: |
+          ls -la SSS-Windows/ SSS-macOS/ 2>/dev/null || echo "目录不存在！"
+          ls -la
+
       - name: 创建 Release
         run: |
-          gh release create latest SSS-Windows/SSS.exe SSS-macOS/SSS \
+          set -x
+          gh release create latest \
+            "SSS-Windows/SSS.exe" \
+            "SSS-macOS/SSS" \
             --title "SSS五绝计算器" \
             --notes "Windows 用户下载 SSS.exe 双击运行。macOS 用户下载 SSS 双击运行。无需安装 Python。" \
             --latest
