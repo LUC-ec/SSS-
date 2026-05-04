@@ -5,6 +5,9 @@ on:
     branches: [main, master]
   workflow_dispatch:  # 允许手动触发
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest
@@ -46,6 +49,7 @@ jobs:
       - name: 发布到 GitHub Release
         uses: ncipollo/release-action@v1
         with:
+          token: ${{ secrets.GITHUB_TOKEN }}
           tag: latest
           name: "SSS五绝计算器 - Windows"
           body: "双击 SSS五绝计算器.exe 即可使用，无需安装任何环境。"
