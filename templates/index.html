@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SSS五绝计算器</title>
+<title>基金跟投管理工具</title>
 <link rel="stylesheet" href="/static/style.css">
 <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
 </head>
@@ -11,8 +11,8 @@
 <div class="app">
   <aside class="sidebar">
     <div class="sidebar-brand">
-      <div class="brand-icon">🧮</div>
-      <div class="brand-text"><span class="brand-title">五绝计算器</span><span class="brand-sub">SSS 仓位跟投计算</span></div>
+      <div class="brand-icon">📊</div>
+      <div class="brand-text"><span class="brand-title">跟投助手</span><span class="brand-sub">个人基金跟投管理</span></div>
     </div>
     <nav class="sidebar-nav">
       <a class="nav-item active" data-tab="dashboard" onclick="switchTab('dashboard')"><span class="nav-icon">◉</span> 我的持仓</a>
@@ -20,7 +20,7 @@
       <a class="nav-item" data-tab="calculator" onclick="switchTab('calculator')"><span class="nav-icon">⌘</span> 比例计算器</a>
       <a class="nav-item" data-tab="settings" onclick="switchTab('settings')"><span class="nav-icon">⚙</span> 设置</a>
     </nav>
-    <div class="sidebar-footer"><div class="trading-badge" id="trading-badge">加载中...</div></div>
+    <div class="sidebar-footer"><div class="version-text">v1.2.1</div><div class="trading-badge" id="trading-badge">加载中...</div></div>
   </aside>
   <main class="main">
     <section class="tab-content active" id="tab-dashboard">
@@ -32,7 +32,7 @@
         <div class="card card-stat"><div class="stat-label">SSS 总满仓</div><div class="stat-value" id="stat-sss-total">--</div><div class="stat-desc">万</div></div>
       </div>
       <div class="card-row two-col">
-        <div class="card card-chart"><div class="card-title">我的持仓分布</div><div class="chart-box" id="chart-personal" style="height:320px"></div></div>
+        <div class="card card-chart"><div class="card-title">我的板块权重分布</div><div class="chart-box" id="chart-personal" style="height:320px"></div></div>
         <div class="card card-chart"><div class="card-title">SSS 板块权重分布</div><div class="chart-box" id="chart-sss" style="height:320px"></div></div>
       </div>
       <div class="card"><div class="card-title">板块调仓建议</div>
@@ -41,11 +41,11 @@
     </section>
     <section class="tab-content" id="tab-guide">
       <header class="page-header"><h1>调仓指南</h1></header>
-      <div class="card"><div class="card-title">我的基金明细 <button class="btn btn-sm" onclick="addPersonalFund()">+ 添加基金</button></div>
+      <div class="card"><div class="card-title">我的基金明细</div>
         <table class="data-table editable" id="personal-funds-table"><thead><tr><th>板块</th><th>代码</th><th>名称</th><th class="num">持仓金额</th><th class="num">所占比例</th><th class="num">板块总持仓</th><th></th></tr></thead>
         <tbody id="personal-funds-body"></tbody></table></div>
       <div class="card"><div class="card-title">SSS 持仓明细</div>
-        <table class="data-table"><thead><tr><th>板块</th><th>代码</th><th>名称</th><th class="num">持仓金额</th><th class="num">占满仓比例</th><th class="num">板块总持仓</th></tr></thead>
+        <table class="data-table"><thead><tr><th>板块</th><th>代码</th><th>名称</th><th class="num">持仓金额</th><th class="num">占比</th><th class="num">板块总持仓</th></tr></thead>
         <tbody id="sss-detail-body"></tbody></table></div>
     </section>
     <section class="tab-content" id="tab-calculator">
@@ -58,6 +58,16 @@
           <div class="input-group"><label>你应同步操作</label><div class="calc-result" id="calc-follow-total">--</div></div>
         </div>
         <div class="calc-breakdown" id="calc-breakdown"></div></div>
+      <div class="card" id="ocr-card">
+        <div class="card-title">📷 OCR 持仓识别</div>
+        <div class="ocr-dropzone" id="ocr-dropzone">
+          <div class="ocr-drop-icon">🖼</div>
+          <div class="ocr-drop-text">拖拽交易截图到此处，或点击选择图片</div>
+          <div class="ocr-drop-hint">支持识别：买入/卖出/定投操作、基金名称、金额</div>
+          <input type="file" id="ocr-file-input" accept="image/*" style="display:none" onchange="handleOcrFile(this)">
+        </div>
+        <div class="ocr-status" id="ocr-status" style="display:none"></div>
+      </div>
     </section>
     <section class="tab-content" id="tab-settings">
       <header class="page-header"><h1>设置</h1></header>
@@ -66,7 +76,7 @@
       <div class="card"><div class="card-title">个人满仓预算</div>
         <div class="setting-row"><input type="number" id="setting-budget" class="input" step="1000" onchange="saveBudget()"><button class="btn btn-primary" onclick="saveBudget()">保存</button></div></div>
       <div class="card"><div class="card-title">SSS 各板块满仓预算 <span style="font-weight:400;font-size:12px;color:var(--text-secondary)">（修改后同步到调仓指南）</span></div>
-        <table class="data-table editable"><thead><tr><th>板块</th><th class="num">推算满仓</th><th class="num">当前持仓</th><th class="num">占满仓比例</th></tr></thead>
+        <table class="data-table editable"><thead><tr><th>板块</th><th class="num">满仓</th><th class="num">当前持仓</th><th class="num">占满仓比例</th></tr></thead>
         <tbody id="sss-budget-table-body"></tbody></table></div>
       <div class="card"><div class="card-title">定投设置 <button class="btn btn-sm" onclick="addDailyInvestment()">+ 添加定投</button></div>
         <table class="data-table editable"><thead><tr><th>板块</th><th>定投金额</th><th>周期</th><th>状态</th><th></th></tr></thead>
@@ -92,7 +102,7 @@
     <div class="modal-body">
       <label>板块名称</label><input type="text" id="sector-name" placeholder="如 医药">
       <label>仓位（成）</label><input type="number" id="sector-level" step="0.1" placeholder="如 7">
-      <label>推算满仓</label><input type="number" id="sector-full" step="1" placeholder="如 2000000"></div>
+      <label>满仓</label><input type="number" id="sector-full" step="1" placeholder="如 2000000"></div>
     <div class="modal-actions"><button class="btn" onclick="closeSectorModal()">取消</button><button class="btn btn-primary" onclick="saveSector()">保存</button></div></div></div>
 <div class="modal-overlay" id="invest-modal-overlay" style="display:none" onclick="closeInvestModal()">
   <div class="modal" onclick="event.stopPropagation()">
@@ -116,6 +126,24 @@
         </select>
       </div></div>
     <div class="modal-actions"><button class="btn" onclick="closeInvestModal()">取消</button><button class="btn btn-primary" onclick="saveDailyInvestment()">保存</button></div></div></div>
+<div class="modal-overlay" id="ocr-modal-overlay" style="display:none" onclick="closeOcrModal()">
+  <div class="modal ocr-modal" onclick="event.stopPropagation()">
+    <div class="modal-title">OCR 识别结果确认</div>
+    <div class="modal-body">
+      <div class="ocr-hint">请核对以下识别结果，可直接修改金额和板块。确认无误后点击「更新至 SSS 持仓」。</div>
+      <table class="ocr-table" id="ocr-table">
+        <thead><tr><th style="width:50px">操作</th><th>基金名称</th><th style="width:90px">金额(元)</th><th style="width:120px">所属板块</th><th style="width:90px">匹配状态</th><th style="width:30px"></th></tr></thead>
+        <tbody id="ocr-table-body"></tbody>
+      </table>
+      <div class="ocr-raw-toggle" onclick="toggleOcrRaw()">查看原始识别文本 ▾</div>
+      <pre class="ocr-raw" id="ocr-raw" style="display:none"></pre>
+    </div>
+    <div class="modal-actions"><button class="btn" onclick="closeOcrModal()">取消</button><button class="btn btn-primary" onclick="applyOcrResults()">确认更新至 SSS 持仓</button></div></div></div>
+<div class="modal-overlay" id="prompt-overlay" style="display:none;z-index:200" onclick="closeDomPrompt()">
+  <div class="modal" style="width:340px" onclick="event.stopPropagation()">
+    <div class="modal-title" id="prompt-title">请输入</div>
+    <div class="modal-body"><input type="text" id="prompt-input" placeholder="" autocomplete="off"></div>
+    <div class="modal-actions"><button class="btn" onclick="closeDomPrompt()">取消</button><button class="btn btn-primary" id="prompt-ok-btn">确定</button></div></div></div>
 <div class="undo-toast" id="undo-toast" style="display:none"><span id="undo-msg"></span><button class="btn btn-sm" id="undo-btn" onclick="performUndo()">撤销</button><button class="btn-del" onclick="dismissUndo()">&times;</button></div>
 <script src="/static/app.js"></script>
 </body>

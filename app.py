@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 import os, sys
 
-# 修复 PyInstaller 打包后终端编码问题
 os.environ.setdefault("PYTHONIOENCODING", "utf-8")
 try:
     if hasattr(sys.stdout, "reconfigure") and sys.stdout.encoding != "utf-8":
@@ -16,11 +15,12 @@ from models import db, Sector, SSSFund, SSSSectorConfig, PersonalFund, PersonalS
 from calculator import compute_all, simulate_follow
 from trading_calendar import process_pending_investments, is_trading_day, get_pending_dates
 from sqlalchemy import func
-import webbrowser, threading, shutil
+import re, json, tempfile, webbrowser, threading, shutil
+from PIL import Image
+import pytesseract
 
 app = Flask(__name__)
 
-# 打包后 _MEIPASS 存放只读资源（模板/静态），工作目录存放可写数据（数据库）
 if getattr(sys, 'frozen', False):
     bundle_dir = sys._MEIPASS
     work_dir = os.path.dirname(sys.executable)
@@ -28,12 +28,10 @@ else:
     bundle_dir = os.path.abspath(os.path.dirname(__file__))
     work_dir = bundle_dir
 
-# 将模板和静态文件路径指向 bundle（只读资源）
 app.template_folder = os.path.join(bundle_dir, 'templates')
 app.static_folder = os.path.join(bundle_dir, 'static')
 
 db_path = os.path.join(work_dir, 'fund_tracker.db')
-# 首次启动：从 bundle 复制种子数据库到工作目录
 if getattr(sys, 'frozen', False) and not os.path.exists(db_path):
     shutil.copy(os.path.join(bundle_dir, 'fund_tracker.db'), db_path)
 
@@ -61,8 +59,8 @@ def api_sector_update(sid):
     s = db.session.get(Sector, sid)
     if not s: return jsonify({"error": "not found"}), 404
     data = request.json
-    if "position_coefficient" in data:
-        s.position_coefficient = data["position_coefficient"]
+    for field in ["position_coefficient", "name"]:
+        if field in data: setattr(s, field, data[field])
     db.session.commit()
     return jsonify({"ok": True})
 
@@ -130,7 +128,7 @@ def api_sss_fund_update(fid):
     f = db.session.get(SSSFund, fid)
     if not f: return jsonify({"error": "not found"}), 404
     data = request.json
-    for field in ["code", "name", "current_amount"]:
+    for field in ["code", "name", "current_amount", "sector_id"]:
         if field in data: setattr(f, field, data[field])
     db.session.commit()
     return jsonify({"ok": True})
@@ -150,18 +148,41 @@ def api_sss_fund_create():
 def api_sss_fund_delete(fid):
     f = db.session.get(SSSFund, fid)
     if not f: return jsonify({"error": "not found"}), 404
+    sid = f.sector_id
     db.session.delete(f)
+    db.session.flush()
+    # Clean up sector if no SSS funds remain, no personal funds, and no SSS config
+    remaining_sss = SSSFund.query.filter_by(sector_id=sid).count()
+    remaining_pf = PersonalFund.query.filter_by(sector_id=sid).count()
+    if remaining_sss == 0 and remaining_pf == 0 and not SSSSectorConfig.query.filter_by(sector_id=sid).first():
+        db.session.delete(db.session.get(Sector, sid))
     db.session.commit()
     return jsonify({"ok": True})
 
 
 # ── Personal Funds ──
 
+def _find_or_create_sector(name):
+    """Create a minimal sector (no SSS config) for personal-fund use."""
+    name = name.strip()
+    if not name:
+        return None
+    s = Sector.query.filter_by(name=name).first()
+    if s:
+        return s
+    max_order = db.session.query(func.max(Sector.display_order)).scalar() or 0
+    s = Sector(name=name, display_order=max_order + 1, position_coefficient=0.7)
+    db.session.add(s)
+    db.session.flush()
+    return s
+
+
 @app.route("/api/personal-funds", methods=["GET"])
 def api_personal_funds():
     funds = PersonalFund.query.join(Sector).order_by(Sector.display_order, PersonalFund.id).all()
     return jsonify([{"id": f.id, "sector_id": f.sector_id, "code": f.code,
-                     "name": f.name, "current_amount": f.current_amount} for f in funds])
+                     "name": f.name, "current_amount": f.current_amount,
+                     "sector_name": f.sector.name} for f in funds])
 
 
 @app.route("/api/personal-funds/<int:fid>", methods=["PUT"])
@@ -169,7 +190,11 @@ def api_personal_fund_update(fid):
     f = db.session.get(PersonalFund, fid)
     if not f: return jsonify({"error": "not found"}), 404
     data = request.json
-    for field in ["code", "name", "current_amount"]:
+    if "sector_name" in data:
+        sec = _find_or_create_sector(data["sector_name"])
+        if sec:
+            f.sector_id = sec.id
+    for field in ["code", "name", "current_amount", "sector_id"]:
         if field in data: setattr(f, field, data[field])
     db.session.commit()
     return jsonify({"ok": True})
@@ -178,7 +203,14 @@ def api_personal_fund_update(fid):
 @app.route("/api/personal-funds", methods=["POST"])
 def api_personal_fund_create():
     data = request.json
-    f = PersonalFund(sector_id=data["sector_id"], code=data.get("code", ""),
+    sector_id = data.get("sector_id")
+    if not sector_id and "sector_name" in data:
+        sec = _find_or_create_sector(data["sector_name"])
+        if sec:
+            sector_id = sec.id
+    if not sector_id:
+        return jsonify({"error": "sector_id or sector_name required"}), 400
+    f = PersonalFund(sector_id=sector_id, code=data.get("code", ""),
                      name=data.get("name", ""), current_amount=data.get("current_amount", 0))
     db.session.add(f)
     db.session.commit()
@@ -189,7 +221,13 @@ def api_personal_fund_create():
 def api_personal_fund_delete(fid):
     f = db.session.get(PersonalFund, fid)
     if not f: return jsonify({"error": "not found"}), 404
+    sid = f.sector_id
     db.session.delete(f)
+    db.session.flush()
+    # Clean up sector if no personal funds remain and no SSS config exists
+    remaining = PersonalFund.query.filter_by(sector_id=sid).count()
+    if remaining == 0 and not SSSSectorConfig.query.filter_by(sector_id=sid).first():
+        db.session.delete(db.session.get(Sector, sid))
     db.session.commit()
     return jsonify({"ok": True})
 
@@ -250,7 +288,7 @@ def api_daily_investment_create():
     d = DailyInvestment(sector_id=data["sector_id"], daily_amount=data.get("daily_amount", 0),
                         fund_label=data.get("fund_label", ""),
                         personal_fund_id=data.get("personal_fund_id"),
-                        is_active=data.get("is_active", 1),
+                        is_active=data.get("is_active", 0),
                         cycle=data.get("cycle", "daily"),
                         cycle_day=data.get("cycle_day"))
     db.session.add(d)
@@ -292,6 +330,196 @@ def api_investment_records():
                      "trade_date": str(r.trade_date), "amount": r.amount} for r in records])
 
 
+# ── OCR ──
+
+@app.route("/api/ocr", methods=["POST"])
+def api_ocr():
+    file = request.files.get("image")
+    if not file:
+        return jsonify({"error": "no image"}), 400
+
+    fd, tmp = tempfile.mkstemp(suffix=".png")
+    os.close(fd)
+    file.save(tmp)
+
+    try:
+        try:
+            img = Image.open(tmp)
+            text = pytesseract.image_to_string(img, lang="chi_sim+eng")
+            stdout_text = text
+            stderr_text = ""
+        except pytesseract.TesseractNotFoundError:
+            return jsonify({
+                "error": "Tesseract OCR 未安装，请参阅帮助文档安装 Tesseract OCR 并添加中文语言包",
+                "hint_win": "下载安装: https://github.com/UB-Mannheim/tesseract/wiki",
+                "hint_mac": "brew install tesseract tesseract-lang",
+                "raw_lines": [],
+                "transactions": [],
+                "ocr_stderr": ""
+            }), 500
+    finally:
+        os.unlink(tmp)
+
+    lines = [l.strip() for l in stdout_text.splitlines() if l.strip()]
+    transactions = _parse_ocr_lines(lines)
+
+    return jsonify({
+        "raw_lines": lines,
+        "transactions": transactions,
+        "ocr_stderr": stderr_text
+    })
+
+
+def _parse_ocr_lines(lines):
+    operations = []
+    funds = []
+    amounts = []
+    current_fund = None
+
+    for line in lines:
+        if line in ("买入", "卖出", "定投"):
+            operations.append(line)
+            continue
+
+        if re.match(r"\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}", line):
+            continue
+
+        m_amt = re.match(r"([\d,]+\.?\d*)\s*元", line)
+        if m_amt:
+            try:
+                amounts.append(float(m_amt.group(1).replace(",", "")))
+            except ValueError:
+                pass
+            continue
+
+        if line in ("交易进行中", "交易成功", "交易失败") or line.startswith("交易"):
+            continue
+
+        fm = re.match(r"基金\s*[|1-9]?\s*(.*)", line)
+        if fm:
+            if current_fund is not None:
+                funds.append(current_fund)
+            current_fund = fm.group(1).strip()
+            continue
+
+        if current_fund is not None:
+            current_fund += line
+            continue
+
+    if current_fund is not None:
+        funds.append(current_fund)
+
+    results = []
+    n = min(len(operations), len(funds), len(amounts))
+    for i in range(n):
+        op_raw = operations[i]
+        op = "sell" if op_raw == "卖出" else "buy"
+        fund = funds[i]
+        amount = amounts[i]
+
+        code = ""
+        cm = re.match(r"(\d{6})", fund)
+        if cm:
+            code = cm.group(1)
+
+        results.append({
+            "operation": op,
+            "operation_label": op_raw,
+            "fund_name": fund,
+            "fund_code": code,
+            "amount": amount
+        })
+
+    return results
+
+
+@app.route("/api/ocr/apply", methods=["POST"])
+def api_ocr_apply():
+    data = request.json
+    transactions = data.get("transactions", [])
+    if not transactions:
+        return jsonify({"ok": False, "error": "no transactions"})
+
+    updated = []
+    created = []
+    all_sss_funds = {f.name.strip(): f for f in SSSFund.query.all()}
+    all_sectors = {s.id: s for s in Sector.query.all()}
+    sector_names_lower = {s.name.lower(): s for s in all_sectors.values()}
+
+    for tx in transactions:
+        fund_name = tx.get("fund_name", "").strip()
+        amount = float(tx.get("amount", 0))
+        op = tx.get("operation", "buy")
+        sector_id = tx.get("sector_id")
+        code = tx.get("fund_code", "").strip()
+
+        if not fund_name or amount <= 0:
+            continue
+
+        # Try exact match first, then fuzzy
+        sss_fund = all_sss_funds.get(fund_name)
+        if sss_fund is None:
+            for name, f in all_sss_funds.items():
+                if fund_name in name or name in fund_name:
+                    sss_fund = f
+                    break
+
+        if sss_fund:
+            if op == "buy":
+                sss_fund.current_amount += amount
+            else:
+                sss_fund.current_amount = max(0, sss_fund.current_amount - amount)
+            if code and not sss_fund.code:
+                sss_fund.code = code
+            updated.append({
+                "id": sss_fund.id,
+                "name": sss_fund.name,
+                "new_amount": sss_fund.current_amount,
+                "action": f"{'+' if op == 'buy' else '-'}{amount}"
+            })
+        else:
+            sid = sector_id
+            if not sid:
+                for sname, sec in sector_names_lower.items():
+                    if sname in fund_name.lower():
+                        sid = sec.id
+                        break
+            if not sid:
+                # Default to "新增板块" instead of first sector
+                default_sector = Sector.query.filter_by(name="新增板块").first()
+                if not default_sector:
+                    max_order = db.session.query(func.max(Sector.display_order)).scalar() or 0
+                    default_sector = Sector(name="新增板块", display_order=max_order + 1,
+                                            position_coefficient=0.7)
+                    db.session.add(default_sector)
+                    db.session.flush()
+                    db.session.add(SSSSectorConfig(sector_id=default_sector.id,
+                                                   position_level=7, full_position=0))
+                    db.session.flush()
+                    all_sectors[default_sector.id] = default_sector
+                sid = default_sector.id
+
+            if sid:
+                new_fund = SSSFund(
+                    sector_id=sid,
+                    code=code,
+                    name=fund_name,
+                    current_amount=amount
+                )
+                db.session.add(new_fund)
+                db.session.flush()
+                all_sss_funds[fund_name] = new_fund
+                created.append({
+                    "id": new_fund.id,
+                    "name": fund_name,
+                    "amount": amount,
+                    "sector_id": sid
+                })
+
+    db.session.commit()
+    return jsonify({"ok": True, "updated": updated, "created": created})
+
+
 # ── Seed ──
 
 def seed():
@@ -306,7 +534,7 @@ def seed():
             conn.exec_driver_sql("ALTER TABLE daily_investments ADD COLUMN cycle_day INTEGER")
 
     if db.session.get(PersonalSetting, 1) is None:
-        db.session.add(PersonalSetting(id=1, total_budget=0))
+        db.session.add(PersonalSetting(id=1, total_budget=50000))
         db.session.commit()
     if Sector.query.count() > 0:
         return
@@ -336,14 +564,13 @@ def seed():
         db.session.add(SSSFund(sector_id=sids[sname], code=code, name=name, current_amount=amt))
     db.session.commit()
 
-    db.session.commit()
-
 
 if __name__ == "__main__":
     with app.app_context():
         seed()
         count = process_pending_investments()
-        if count: print(f"  📊 已处理 {count} 笔定投")
+        if count:
+            print(f"  📊 已处理 {count} 笔定投")
 
     url = "http://127.0.0.1:5000"
     threading.Timer(1.0, lambda: webbrowser.open(url)).start()
